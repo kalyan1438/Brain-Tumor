@@ -5,9 +5,10 @@ from tqdm import tqdm
 
 # ========= PATHS =========
 
-INPUT_DIR = "../dataset/Training"
-OUTPUT_DIR = "../dataset/LR_Training"
-
+INPUT_DIR_Train = "../dataset/Training"
+OUTPUT_DIR_Train = "../dataset/LR_Training" 
+INPUT_DIR_Test = "../dataset/Testing"
+OUTPUT_DIR_Test = "../dataset/LR_Testing" 
 # ========= CREATE OUTPUT =========
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
