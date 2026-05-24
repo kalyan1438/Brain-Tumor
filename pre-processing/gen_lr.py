@@ -5,10 +5,10 @@ from tqdm import tqdm
 
 # ========= PATHS =========
 
-INPUT_DIR_Train = "../dataset/Training"
-OUTPUT_DIR_Train = "../dataset/LR_Training" 
-INPUT_DIR_Test = "../dataset/Testing"
-OUTPUT_DIR_Test = "../dataset/LR_Testing" 
+INPUT_DIR = "../dataset/Training"
+OUTPUT_DIR = "../dataset/LR_Training" 
+INPUT_DIR_ = "../dataset/Testing"
+OUTPUT_DIR_ = "../dataset/LR_Testing" 
 # ========= CREATE OUTPUT =========
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -64,7 +64,7 @@ for cls in os.listdir(INPUT_DIR):
         lr = cv2.GaussianBlur(
             lr,
             (3, 3),
-            0.8
+            1.25
         )
 
         # ==================================
@@ -73,7 +73,7 @@ for cls in os.listdir(INPUT_DIR):
 
         noise = np.random.normal(
             0,
-            5,
+            7,
             lr.shape
         ).astype(np.float32)
 
