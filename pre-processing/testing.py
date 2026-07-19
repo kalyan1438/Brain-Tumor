@@ -107,5 +107,5 @@ def quick_check(hr_folder, lr_folder):
 # Run Check
 quick_check(
     "dataset/Testing",
-    "dataset/LOW_Testing"
+    "dataset/LR_Testing"
 )
