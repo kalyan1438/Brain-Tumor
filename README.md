@@ -36,7 +36,7 @@ LR MRI  ──► EDSR   ──► SR (EDSR) MRI
 
 | Model  | PSNR     | SSIM   |
 |--------|----------|--------|
-| SRCNN  | ~31–33 dB| ~0.91  |
+| SRCNN  | 36.56 dB | 0.971  |
 | EDSR   | 38.61 dB | 0.979  |
 
 ### Classifier Performance (HR-trained EfficientNetB3)
