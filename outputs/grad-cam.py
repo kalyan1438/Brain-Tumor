@@ -1,292 +1,101 @@
-import os
-import random
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
-
-from PIL import Image
 from torchvision import transforms, models
-
-from pytorch_grad_cam import HiResCAM
+from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-
-# ==========================================================
-# Configuration
-# ==========================================================
+from PIL import Image
+import matplotlib.pyplot as plt
+import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
 IMG_SIZE = 300
+CLASSES = ['glioma', 'meningioma', 'notumor', 'pituitary']
+MODEL_PATH = './models/effnetb3.pth'
+BASE_DIR = './dataset'
+OUTPUT_DIR = './gradcam_results'
 
-CLASSES = [
-    "glioma",
-    "meningioma",
-    "notumor",
-    "pituitary"
-]
-
-MODEL_PATH = "./models/effnetb3_final.pth"
-TESTING_DIR = "./dataset/Testing"
-
-OUTPUT_DIR = "./gradcam_results"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-NUM_SAMPLES_PER_CLASS = 3
-NUM_MISCLASSIFIED = 5
-
-random.seed(42)
-
-# ==========================================================
-# Image Transform
-# ==========================================================
+DATASET_FOLDERS = {
+    'HR': 'Testing',
+    'LR': 'LR_Testing',
+    'SRCNN': 'SRCNN_Testing',
+    'EDSR': 'EDSR_Testing',
+}
 
 test_tfms = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485,0.456,0.406],
-        std=[0.229,0.224,0.225]
-    )
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# ==========================================================
-# Model
-# ==========================================================
-
 def build_model(num_classes=4):
+    m = models.efficientnet_b3(weights=None)
+    in_feats = m.classifier[1].in_features
+    m.classifier = nn.Sequential(nn.Dropout(p=0.4, inplace=True), nn.Linear(in_feats, num_classes))
+    return m.to(device)
 
-    model = models.efficientnet_b3(weights=None)
+classifier = build_model(num_classes=4)
+classifier.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+classifier.eval()
+print("Classifier loaded")
 
-    in_features = model.classifier[1].in_features
-
-    model.classifier = nn.Sequential(
-        nn.Dropout(0.4),
-        nn.Linear(in_features, num_classes)
-    )
-
-    return model.to(device)
-
-model = build_model(4)
-
-model.load_state_dict(
-    torch.load(MODEL_PATH, map_location=device)
-)
-
-model.eval()
-
-print("Model Loaded Successfully!")
-
-# ==========================================================
-# Automatically find last Conv layer
-# ==========================================================
-
-def get_last_conv_layer(model):
-
-    last_conv = None
-    last_name = ""
-
-    for name, module in model.named_modules():
-
-        if isinstance(module, nn.Conv2d):
-
-            last_conv = module
-            last_name = name
-
-    if last_conv is None:
-        raise RuntimeError("No Conv2d layer found.")
-
-    print("GradCAM Layer :", last_name)
-
-    return last_conv
-
-target_layers = [get_last_conv_layer(model)]
-
-# ==========================================================
-# Utility
-# ==========================================================
+target_layers = [classifier.features[-1]]
 
 def denormalize(img_tensor):
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+    img = img_tensor.cpu() * std + mean
+    return img.clamp(0, 1).permute(1, 2, 0).numpy()
 
-    mean = torch.tensor([0.485,0.456,0.406]).view(3,1,1)
-    std  = torch.tensor([0.229,0.224,0.225]).view(3,1,1)
-
-    img = img_tensor.cpu()*std + mean
-
-    return img.clamp(0,1).permute(1,2,0).numpy()
-
-# ==========================================================
-# GradCAM
-# ==========================================================
-
-def show_gradcam(img_path,true_class=None,save_path=None):
-
+def save_single_gradcam(img_path, true_class, out_path):
     img = Image.open(img_path).convert("RGB")
-
     input_tensor = test_tfms(img).unsqueeze(0).to(device)
 
     with torch.no_grad():
+        output = classifier(input_tensor)
+        pred_class = output.argmax(dim=1).item()
+        confidence = torch.softmax(output, dim=1)[0, pred_class].item()
 
-        output = model(input_tensor)
-
-        probs = torch.softmax(output,dim=1)
-
-        confidence,pred = probs.max(dim=1)
-
-        pred = pred.item()
-        confidence = confidence.item()
-
-    cam = HiResCAM(
-        model=model,
-        target_layers=target_layers
-    )
-
-    grayscale_cam = cam(
-        input_tensor=input_tensor,
-        targets=[ClassifierOutputTarget(pred)],
-        aug_smooth=True,
-        eigen_smooth=True
-    )[0]
+    cam = GradCAM(model=classifier, target_layers=target_layers)
+    targets = [ClassifierOutputTarget(pred_class)]
+    grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0]
 
     rgb_img = denormalize(input_tensor[0])
+    visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-    visualization = show_cam_on_image(
-        rgb_img.astype("float32"),
-        grayscale_cam,
-        use_rgb=True,
-        image_weight=0.6
-    )
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    axes[0].imshow(rgb_img); axes[0].set_title("Original"); axes[0].axis("off")
+    axes[1].imshow(grayscale_cam, cmap="jet"); axes[1].set_title("Heatmap"); axes[1].axis("off")
+    axes[2].imshow(visualization); axes[2].set_title("Overlay"); axes[2].axis("off")
 
-    fig,axes = plt.subplots(1,3,figsize=(13,4))
-
-    axes[0].imshow(rgb_img)
-    axes[0].set_title("Original")
-    axes[0].axis("off")
-
-    axes[1].imshow(grayscale_cam,cmap="jet")
-    axes[1].set_title("Heatmap")
-    axes[1].axis("off")
-
-    axes[2].imshow(visualization)
-    axes[2].set_title("Overlay")
-    axes[2].axis("off")
-
-    title = f"Prediction: {CLASSES[pred]} ({confidence*100:.2f}%)"
-
-    if true_class is not None:
-        title += f" | True: {true_class}"
-
-    fig.suptitle(title,fontsize=16)
-
+    title = f"Pred: {CLASSES[pred_class]} ({confidence*100:.1f}%) | True: {true_class}"
+    fig.suptitle(title)
     plt.tight_layout()
-
-    if save_path:
-
-        plt.savefig(
-            save_path,
-            dpi=300,
-            bbox_inches="tight"
-        )
-
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close()
+    return pred_class, confidence
 
-    print("Saved ->",save_path)
+if __name__ == "__main__":
+    for dataset_label, folder_name in DATASET_FOLDERS.items():
+        out_folder = os.path.join(OUTPUT_DIR, dataset_label)
+        os.makedirs(out_folder, exist_ok=True)
+        print(f"\n--- Processing {dataset_label} ({folder_name}) ---")
 
-    return pred,confidence
+        for cls_name in CLASSES:
+            cls_dir = os.path.join(BASE_DIR, folder_name, cls_name)
+            if not os.path.exists(cls_dir):
+                print(f"  SKIP: {cls_dir} not found")
+                continue
+            files = sorted(os.listdir(cls_dir))
+            sample_file = files[0]  # first image per class - change index for a different sample
+            img_path = os.path.join(cls_dir, sample_file)
+            out_path = os.path.join(out_folder, f"{cls_name}_gradcam.png")
 
-# ==========================================================
-# Find Misclassified Images
-# ==========================================================
+            pred, conf = save_single_gradcam(img_path, cls_name, out_path)
+            print(f"  {cls_name} ({sample_file}): pred={CLASSES[pred]} ({conf*100:.1f}%) -> saved {out_path}")
 
-def find_misclassified(max_images=5):
-
-    misclassified=[]
-
-    for cls in CLASSES:
-
-        folder=os.path.join(TESTING_DIR,cls)
-
-        for fname in os.listdir(folder):
-
-            img_path=os.path.join(folder,fname)
-
-            img=Image.open(img_path).convert("RGB")
-
-            tensor=test_tfms(img).unsqueeze(0).to(device)
-
-            with torch.no_grad():
-
-                pred=model(tensor).argmax(1).item()
-
-            if CLASSES[pred]!=cls:
-
-                misclassified.append(
-                    (
-                        img_path,
-                        cls,
-                        CLASSES[pred]
-                    )
-                )
-
-                if len(misclassified)>=max_images:
-                    return misclassified
-
-    return misclassified
-
-# ==========================================================
-# Main
-# ==========================================================
-
-if __name__=="__main__":
-
-    print("\nGenerating GradCAM Images...\n")
-
-    for cls in CLASSES:
-
-        folder=os.path.join(TESTING_DIR,cls)
-
-        files=random.sample(
-            os.listdir(folder),
-            min(NUM_SAMPLES_PER_CLASS,len(os.listdir(folder)))
-        )
-
-        for i,f in enumerate(files):
-
-            path=os.path.join(folder,f)
-
-            show_gradcam(
-                path,
-                true_class=cls,
-                save_path=os.path.join(
-                    OUTPUT_DIR,
-                    f"{cls}_{i+1}.png"
-                )
-            )
-
-    print("\nSearching Misclassified Images...\n")
-
-    mistakes=find_misclassified(NUM_MISCLASSIFIED)
-
-    if len(mistakes)==0:
-
-        print("No Misclassified Images Found.")
-
-    else:
-
-        for i,(img_path,true_cls,pred_cls) in enumerate(mistakes):
-
-            print(
-                f"{i+1}. True={true_cls} Pred={pred_cls}"
-            )
-
-            show_gradcam(
-                img_path,
-                true_class=true_cls,
-                save_path=os.path.join(
-                    OUTPUT_DIR,
-                    f"misclassified_{i+1}.png"
-                )
-            )
-
-    print("\nFinished Successfully!")
+    print("\nDone. Folders created:")
+    for label in DATASET_FOLDERS:
+        print(f"  {OUTPUT_DIR}/{label}/")
