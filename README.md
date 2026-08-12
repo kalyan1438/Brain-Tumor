@@ -74,6 +74,41 @@ Super-resolution meaningfully recovers classification accuracy lost to image deg
 - **EDSR**: 16-block residual network without upsampling (same-size refinement variant, Lim et al., 2017 architecture)
 - **EfficientNetB3**: ImageNet-pretrained, fine-tuned in two phases (frozen backbone → full fine-tune) with class-weighted loss to address glioma class imbalance
 
+## Computational Complexity
+
+Computational complexity was evaluated for the three major models in the proposed pipeline: SRCNN, EDSR, and EfficientNet-B3.
+
+The analysis reports the total number of trainable parameters, approximate FP32 parameter storage, and single-image inference latency. Inference latency was measured on a CPU using the native input resolution of each model after warm-up runs.
+
+### Complexity Results
+
+| Model | Input Resolution | Parameters | Approx. Size (MB) | Avg. Inference Time (ms) |
+|-------|------------------|-----------:|------------------:|-------------------------:|
+| SRCNN | 256 × 256 | 20,099 | 0.077 | 15.84 |
+| EDSR | 256 × 256 | 1,222,147 | 4.66 | 655.53 |
+| EfficientNet-B3 | 300 × 300 | 10,702,380 | 40.83 | 66.12 |
+
+### Observations
+
+- **SRCNN** is the most lightweight model, with only 20,099 parameters and the lowest measured CPU inference latency of 15.84 ms/image.
+- **EDSR** contains 1.22 million parameters and requires substantially higher CPU inference time (655.53 ms/image), primarily due to repeated high-resolution convolutional operations.
+- **EfficientNet-B3** has the largest parameter count (10.70 million) and an approximate FP32 parameter storage requirement of 40.83 MB.
+- Despite having fewer parameters than EfficientNet-B3, **EDSR has substantially higher inference latency** because parameter count alone does not determine computational cost; the number and spatial size of convolution operations also contribute significantly.
+- The reported model size is an approximate FP32 parameter-storage estimate and does not represent the exact size of the serialized checkpoint file.
+
+### Hardware and Measurement
+
+- **Execution device:** CPU
+- **SRCNN input:** `(1, 3, 256, 256)`
+- **EDSR input:** `(1, 3, 256, 256)`
+- **EfficientNet-B3 input:** `(1, 3, 300, 300)`
+- **Warm-up runs:** 10
+- **Timed inference runs:** 50
+- **Timing:** `time.perf_counter()`
+- **CUDA synchronization:** Applied when CUDA was available
+- **Inference mode:** `torch.inference_mode()`
+
+> **Note:** Inference latency is hardware-dependent. The reported values should therefore be interpreted as measurements for the specific CPU environment used during the experiment rather than universal execution times.
 ## Limitations
 
 - Single train/test split (no cross-validation reported yet)
