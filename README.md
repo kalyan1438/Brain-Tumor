@@ -78,37 +78,38 @@ Super-resolution meaningfully recovers classification accuracy lost to image deg
 
 Computational complexity was evaluated for the three major models in the proposed pipeline: SRCNN, EDSR, and EfficientNet-B3.
 
-The analysis reports the total number of trainable parameters, approximate FP32 parameter storage, and single-image inference latency. Inference latency was measured on a CPU using the native input resolution of each model after warm-up runs.
+Inference latency was measured on an NVIDIA Tesla T4 GPU using a batch size of one. Each model was warmed up for 10 iterations before measuring 50 inference runs. SRCNN and EDSR were evaluated at 256 × 256 resolution, while EfficientNet-B3 was evaluated at its native 300 × 300 input resolution.
 
 ### Complexity Results
 
 | Model | Input Resolution | Parameters | Approx. Size (MB) | Avg. Inference Time (ms) |
 |-------|------------------|-----------:|------------------:|-------------------------:|
-| SRCNN | 256 × 256 | 20,099 | 0.077 | 15.84 |
-| EDSR | 256 × 256 | 1,222,147 | 4.66 | 655.53 |
-| EfficientNet-B3 | 300 × 300 | 10,702,380 | 40.83 | 66.12 |
+| SRCNN | 256 × 256 | 20,099 | 0.08 | 2.80 ± 0.42 |
+| EDSR | 256 × 256 | 1,222,147 | 4.66 | 37.86 ± 0.28 |
+| EfficientNet-B3 | 300 × 300 | 10,702,380 | 40.83 | 13.32 ± 2.32 |
 
 ### Observations
 
-- **SRCNN** is the most lightweight model, with only 20,099 parameters and the lowest measured CPU inference latency of 15.84 ms/image.
-- **EDSR** contains 1.22 million parameters and requires substantially higher CPU inference time (655.53 ms/image), primarily due to repeated high-resolution convolutional operations.
-- **EfficientNet-B3** has the largest parameter count (10.70 million) and an approximate FP32 parameter storage requirement of 40.83 MB.
-- Despite having fewer parameters than EfficientNet-B3, **EDSR has substantially higher inference latency** because parameter count alone does not determine computational cost; the number and spatial size of convolution operations also contribute significantly.
-- The reported model size is an approximate FP32 parameter-storage estimate and does not represent the exact size of the serialized checkpoint file.
+- **SRCNN** is the most lightweight model, with 20,099 parameters and the lowest measured inference latency of **2.80 ms/image**.
+- **EDSR** contains 1.22 million parameters and requires **37.86 ms/image**, reflecting the computational cost of its repeated high-resolution residual convolutions.
+- **EfficientNet-B3** has the largest parameter count at 10.70 million, with an approximate FP32 parameter storage requirement of **40.83 MB**.
+- Despite having substantially more parameters than EDSR, EfficientNet-B3 achieves lower measured inference latency (**13.32 ms/image**) on the Tesla T4 GPU. This demonstrates that parameter count alone does not determine inference latency; computational operations, feature-map dimensions, and GPU execution efficiency also contribute.
+- The reported model size is an approximate FP32 parameter-storage estimate and does not represent the exact serialized checkpoint size.
 
-### Hardware and Measurement
+### Hardware and Measurement Configuration
 
-- **Execution device:** CPU
+- **GPU:** NVIDIA Tesla T4
+- **Batch size:** 1
 - **SRCNN input:** `(1, 3, 256, 256)`
 - **EDSR input:** `(1, 3, 256, 256)`
 - **EfficientNet-B3 input:** `(1, 3, 300, 300)`
 - **Warm-up runs:** 10
 - **Timed inference runs:** 50
-- **Timing:** `time.perf_counter()`
-- **CUDA synchronization:** Applied when CUDA was available
+- **Timing method:** `time.perf_counter()`
 - **Inference mode:** `torch.inference_mode()`
+- **CUDA synchronization:** Applied before and after timed GPU inference
 
-> **Note:** Inference latency is hardware-dependent. The reported values should therefore be interpreted as measurements for the specific CPU environment used during the experiment rather than universal execution times.
+> **Note:** Inference latency is hardware- and implementation-dependent. The reported values represent measurements obtained on the NVIDIA Tesla T4 under the configuration described above.
 ## Limitations
 
 - Single train/test split (no cross-validation reported yet)
